@@ -35,7 +35,7 @@ async function sendMessage(
 // -------------------- Gemini Response Generator --------------------
 async function generateResponse(prompt: string): Promise<string> {
   try {
-    const fullPrompt =`Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Russian, as if chatting with a friend online: ${prompt}`;
+    const fullPrompt =`Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online: ${prompt}`;
     const result = await model.generateContent(fullPrompt);
     return result.response.text();
   } catch (error) {
