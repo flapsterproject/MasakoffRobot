@@ -54,7 +54,7 @@ async function generateResponse(prompt: string, isCreator: boolean, userHistory:
     return result.response.text();
   } catch (error) {
     console.error("Gemini error:", error);
-    return "🤖 Meniň pikirimçe, şu ýerde näme bolýar-a? 😅";
+    return "🤖 Meniň limitim gutardy 😅";
   }
 }
 
