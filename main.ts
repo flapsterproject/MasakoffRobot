@@ -1,7 +1,8 @@
 // main.ts
-// 🤖 Masakoff Sarcastic Bot with User Memory + Admin Delete
+// 🤖 Masakoff Sarcastic Bot with User Memory + Admin Delete + Group Message Optimization
 // 💾 Stores all user messages individually in Deno KV
-// 🔧 Only admins can delete users' stored data using /delete <username>
+// 💬 Replies in groups only once every 5th message
+// 👤 Users can delete their own data in private with /delete
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.19.0";
@@ -23,12 +24,8 @@ const kv = await Deno.openKv();
 const ADMINS = ["Masakoff"]; // Add more usernames if needed
 
 // -------------------- Telegram Helpers --------------------
-async function sendMessage(
-  chatId: string | number,
-  text: string,
-  replyToMessageId?: number,
-) {
-  const res = await fetch(`${API}/sendMessage`, {
+async function sendMessage(chatId: string | number, text: string, replyToMessageId?: number) {
+  await fetch(`${API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -38,19 +35,13 @@ async function sendMessage(
       allow_sending_without_reply: true,
     }),
   });
-  const data = await res.json();
-  return data.result?.message_id;
 }
 
 // -------------------- Gemini Response Generator --------------------
-async function generateResponse(
-  prompt: string,
-  isCreator: boolean,
-  userHistory: string[],
-): Promise<string> {
+async function generateResponse(prompt: string, isCreator: boolean, userHistory: string[]): Promise<string> {
   try {
     const style = isCreator
-      ? `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.`
+      ? `Respond as a witty, realistic human — use humor but be respectful to your creator. Keep it short (1–2 sentences), natural, and in Turkmen.`
       : `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.`;
 
     const context = userHistory.length
@@ -63,7 +54,7 @@ async function generateResponse(
     return result.response.text();
   } catch (error) {
     console.error("Gemini error:", error);
-   // return "Извини, я завис 🤖💤";
+    return "🤖 Meniň pikirimçe, şu ýerde näme bolýar-a? 😅";
   }
 }
 
@@ -86,56 +77,80 @@ async function deleteUserHistory(username: string) {
   await kv.delete(key);
 }
 
+// -------------------- Group Message Counter --------------------
+async function incrementGroupCounter(chatId: string): Promise<number> {
+  const key = ["group_count", chatId];
+  const data = await kv.get<number>(key);
+  const count = (data?.value || 0) + 1;
+
+  if (count >= 5) {
+    await kv.set(key, 0); // reset after 5th message
+  } else {
+    await kv.set(key, count);
+  }
+
+  return count;
+}
+
 // -------------------- HTTP Handler --------------------
 serve(async (req) => {
   try {
     const update = await req.json();
+    if (!update.message) return new Response("ok");
 
-    if (update.message) {
-      const chatId = String(update.message.chat.id);
-      const text = update.message.text;
-      const messageId = update.message.message_id;
-      const username = update.message.from?.username || "unknown_user";
-      const isAdmin = ADMINS.includes(username);
-      const isCreator = username === "Masakoff";
+    const msg = update.message;
+    const chatId = String(msg.chat.id);
+    const text = msg.text;
+    const messageId = msg.message_id;
+    const username = msg.from?.username || "unknown_user";
+    const isAdmin = ADMINS.includes(username);
+    const isCreator = username === "Masakoff";
+    const isPrivate = msg.chat.type === "private";
 
-      if (!text) return new Response("ok");
+    if (!text) return new Response("ok");
 
-      // -------------------- Admin Delete Command --------------------
-      if (text.startsWith("/delete")) {
-        if (!isAdmin) {
-          await sendMessage(chatId, "🚫 You don’t have permission to do that.", messageId);
-          return new Response("ok");
-        }
+    // -------------------- Private Chat: User Self-Delete --------------------
+    if (isPrivate && text.trim() === "/delete") {
+      await deleteUserHistory(username);
+      await sendMessage(chatId, "🗑 Siziň maglumatlaryňyz pozuldy.", messageId);
+      return new Response("ok");
+    }
 
-        const parts = text.split(" ");
-        if (parts.length < 2) {
-          await sendMessage(chatId, "Usage: /delete <username>", messageId);
-          return new Response("ok");
-        }
-
-        const targetUser = parts[1].replace("@", "");
-        await deleteUserHistory(targetUser);
-        await sendMessage(chatId, `🗑 Storage for @${targetUser} deleted successfully.`, messageId);
+    // -------------------- Admin Delete Command --------------------
+    if (text.startsWith("/delete")) {
+      if (!isAdmin) {
+        await sendMessage(chatId, "🚫 You don’t have permission to do that.", messageId);
         return new Response("ok");
       }
 
-      // -------------------- Regular Message Handling --------------------
-      // 💾 Save user's message
-      await saveUserMessage(username, text);
+      const parts = text.split(" ");
+      if (parts.length < 2) {
+        await sendMessage(chatId, "Usage: /delete <username>", messageId);
+        return new Response("ok");
+      }
 
-      // 🧠 Get user's history for context
-      const history = await getUserHistory(username);
-
-      // 🤖 Generate a contextual response
-      const botResponse = await generateResponse(text, isCreator, history);
-
-      // 💬 Send the reply
-      await sendMessage(chatId, botResponse, messageId);
+      const targetUser = parts[1].replace("@", "");
+      await deleteUserHistory(targetUser);
+      await sendMessage(chatId, `🗑 Storage for @${targetUser} deleted successfully.`, messageId);
+      return new Response("ok");
     }
+
+    // -------------------- Group Message Optimization --------------------
+    if (msg.chat.type === "group" || msg.chat.type === "supergroup") {
+      const count = await incrementGroupCounter(chatId);
+      if (count !== 5) return new Response("ok"); // only reply every 5th message
+    }
+
+    // -------------------- Regular Message Handling --------------------
+    await saveUserMessage(username, text);
+
+    const history = await getUserHistory(username);
+    const botResponse = await generateResponse(text, isCreator, history);
+    await sendMessage(chatId, botResponse, messageId);
   } catch (err) {
     console.error("Error handling update:", err);
   }
 
   return new Response("ok");
 });
+
