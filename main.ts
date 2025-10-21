@@ -41,7 +41,7 @@ async function sendMessage(chatId: string | number, text: string, replyToMessage
 async function generateResponse(prompt: string, isCreator: boolean, userHistory: string[]): Promise<string> {
   try {
     const style = isCreator
-      ? `Respond as a witty, realistic human — use humor but be respectful to your creator. Keep it short (1–2 sentences), natural, and in Turkmen.`
+      ? `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.`
       : `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.`;
 
     const context = userHistory.length
