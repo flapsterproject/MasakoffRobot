@@ -1,4 +1,7 @@
 // main.ts
+// 🤖 Masakoff Sarcastic Bot with Memory
+// 💾 Stores each user's last message in Deno KV and replies contextually
+
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.19.0";
 
@@ -11,6 +14,9 @@ const SECRET_PATH = "/masakoffrobot";
 const GEMINI_API_KEY = "AIzaSyC2tKj3t5oTsrr_a0B1mDxtJcdyeq5uL0U";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+// -------------------- Deno KV Setup --------------------
+const kv = await Deno.openKv();
 
 // -------------------- Telegram Helpers --------------------
 async function sendMessage(
@@ -33,13 +39,21 @@ async function sendMessage(
 }
 
 // -------------------- Gemini Response Generator --------------------
-async function generateResponse(prompt: string, isCreator: boolean): Promise<string> {
+async function generateResponse(
+  prompt: string,
+  isCreator: boolean,
+  lastMessage?: string,
+): Promise<string> {
   try {
     const style = isCreator
       ? `Respond politely, naturally, and respectfully — as if speaking to your creator, add emojis. Avoid sarcasm, be concise, and use a friendly tone in Turkmen.`
       : `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.`;
 
-    const result = await model.generateContent(`${style}\nUser: ${prompt}`);
+    const context = lastMessage
+      ? `User previously said: "${lastMessage}". Now they say: "${prompt}".`
+      : `User says: "${prompt}".`;
+
+    const result = await model.generateContent(`${style}\n${context}`);
     return result.response.text();
   } catch (error) {
     console.error("Gemini error:", error);
@@ -59,9 +73,23 @@ serve(async (req) => {
       const username = update.message.from?.username || "";
 
       if (text) {
-        const isCreator = username === "Masakoff"; // 👑 Creator check
-        const botResponse = await generateResponse(text, isCreator);
+        const userKey = ["user", chatId];
+
+        // 🧠 Get the user's last message
+        const last = await kv.get(userKey);
+        const lastMessage = last?.value || null;
+
+        // 👑 Creator check
+        const isCreator = username === "Masakoff";
+
+        // 🤖 Generate response using last message as context
+        const botResponse = await generateResponse(text, isCreator, lastMessage);
+
+        // 💬 Send reply
         await sendMessage(chatId, botResponse, messageId);
+
+        // 💾 Save this as the user's new "last message"
+        await kv.set(userKey, text);
       }
     }
   } catch (err) {
@@ -70,3 +98,4 @@ serve(async (req) => {
 
   return new Response("ok");
 });
+
