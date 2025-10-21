@@ -13,16 +13,12 @@ const SECRET_PATH = "/masakoffrobot";
 // -------------------- Gemini Setup --------------------
 const GEMINI_API_KEY = "AIzaSyC2tKj3t5oTsrr_a0B1mDxtJcdyeq5uL0U";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-const imageModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+const textModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const imageModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // -------------------- Telegram Helpers --------------------
-async function sendMessage(
-  chatId: string | number,
-  text: string,
-  replyToMessageId?: number,
-) {
-  const res = await fetch(`${API}/sendMessage`, {
+async function sendMessage(chatId: string | number, text: string, replyToMessageId?: number) {
+  await fetch(`${API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -32,27 +28,23 @@ async function sendMessage(
       allow_sending_without_reply: true,
     }),
   });
-  const data = await res.json();
-  return data.result?.message_id;
 }
 
-async function sendPhoto(chatId: string | number, imageUrl: string, caption?: string) {
-  await fetch(`${API}/sendPhoto`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      photo: imageUrl,
-      caption,
-    }),
-  });
+async function sendPhotoBinary(chatId: string | number, base64: string, caption?: string) {
+  const binary = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("photo", new Blob([binary], { type: "image/png" }), "sarcastic.png");
+  if (caption) form.append("caption", caption);
+
+  await fetch(`${API}/sendPhoto`, { method: "POST", body: form });
 }
 
 // -------------------- Gemini Text Response --------------------
 async function generateResponse(prompt: string): Promise<string> {
   try {
-    const fullPrompt = `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online: ${prompt}`;
-    const result = await model.generateContent(fullPrompt);
+    const fullPrompt = `Respond as a witty, realistic human — use sarcasm, keep it short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online: ${prompt}`;
+    const result = await textModel.generateContent(fullPrompt);
     return result.response.text();
   } catch (error) {
     console.error("Gemini text error:", error);
@@ -64,15 +56,16 @@ async function generateResponse(prompt: string): Promise<string> {
 async function generateSarcasticImage(prompt: string): Promise<string | null> {
   try {
     const fullPrompt = `Create a funny and sarcastic digital artwork based on this: "${prompt}". The image should look witty, humorous, and have a playful tone.`;
-    const result = await imageModel.generateContent([{ text: fullPrompt }]);
-    const imagePart = result.response.candidates?.[0]?.content?.parts?.find(
-      (p: any) => p.inlineData
+    const result = await imageModel.generateContent([
+      { role: "user", parts: [{ text: fullPrompt }] },
+    ]);
+
+    const part = result.response.candidates?.[0]?.content?.parts?.find(
+      (p: any) => p.inlineData?.data
     );
-    if (!imagePart) return null;
-    const base64 = imagePart.inlineData.data;
-    // Upload to Telegraph or any file host would be better, but Telegram supports base64 directly only via file_id.
-    // Instead, return a Data URL for simplicity
-    return `data:image/png;base64,${base64}`;
+    if (!part) return null;
+
+    return part.inlineData.data; // base64 string
   } catch (error) {
     console.error("Gemini image error:", error);
     return null;
@@ -91,22 +84,21 @@ serve(async (req) => {
 
       if (!text) return new Response("ok");
 
-      // Check if user wants to "make" or "create" something
+      // Handle "make" or "create" triggers
       if (/\b(make|create)\b/i.test(text)) {
-        const imageUrl = await generateSarcasticImage(text);
-        if (imageUrl) {
-          await sendPhoto(chatId, imageUrl, "😏 Şeýt diýdiň, men bolsa surat çekdim...");
+        const base64 = await generateSarcasticImage(text);
+
+        if (base64) {
+          await sendPhotoBinary(chatId, base64, "😏 Şeýt diýdiň, men bolsa surat çekdim...");
+          const captionResponse = await generateResponse(
+            `Describe sarcastically what you just created: ${text}`
+          );
+          await sendMessage(chatId, captionResponse);
         } else {
           await sendMessage(chatId, "Hmm... surat döretmekde näsazlyk boldy 😅", messageId);
         }
-
-        // Send sarcastic description after image
-        const captionResponse = await generateResponse(
-          `Describe sarcastically what you just created: ${text}`
-        );
-        await sendMessage(chatId, captionResponse);
       } else {
-        // Normal sarcastic text reply
+        // Normal sarcastic reply
         const botResponse = await generateResponse(text);
         await sendMessage(chatId, botResponse, messageId);
       }
@@ -117,4 +109,5 @@ serve(async (req) => {
 
   return new Response("ok");
 });
+
 
