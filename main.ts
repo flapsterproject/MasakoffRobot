@@ -12,7 +12,7 @@ const API = `https://api.telegram.org/bot${TOKEN}`;
 const SECRET_PATH = "/masakoffrobot";
 
 // -------------------- Gemini Setup --------------------
-const GEMINI_API_KEY = "AIzaSyC8aqnLqr6E4i7hxIARY-sTwANVw9WYeO8g";
+const GEMINI_API_KEY = "AIzaSyC8aqnLqr6E4i7hxIARY-sTwANVw9WYeO8";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
