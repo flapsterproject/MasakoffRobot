@@ -119,7 +119,7 @@ serve(async (req) => {
     // -------------------- Admin Delete Command --------------------
     if (text.startsWith("/delete")) {
       if (!isAdmin) {
-        await sendMessage(chatId, "🚫 You don’t have permission to do that.", messageId);
+        await sendMessage(chatId, "🚫 Seniň muny etmäge hakyň ýok!", messageId);
         return new Response("ok");
       }
 
@@ -131,7 +131,7 @@ serve(async (req) => {
 
       const targetUser = parts[1].replace("@", "");
       await deleteUserHistory(targetUser);
-      await sendMessage(chatId, `🗑 Storage for @${targetUser} deleted successfully.`, messageId);
+      await sendMessage(chatId, `@${targetUser} 🗑 Siziň maglumatlaryňyz pozuldy.`, messageId);
       return new Response("ok");
     }
 
