@@ -63,7 +63,7 @@ async function generateResponse(
     return result.response.text();
   } catch (error) {
     console.error("Gemini error:", error);
-    return "Извини, я завис 🤖💤";
+   // return "Извини, я завис 🤖💤";
   }
 }
 
