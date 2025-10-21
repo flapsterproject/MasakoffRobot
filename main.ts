@@ -1,6 +1,7 @@
 // main.ts
-// 🤖 Masakoff Sarcastic Bot with Memory
-// 💾 Stores each user's last message in Deno KV and replies contextually
+// 🤖 Masakoff Sarcastic Bot with User Memory + Admin Delete
+// 💾 Stores all user messages individually in Deno KV
+// 🔧 Only admins can delete users' stored data using /delete <username>
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.19.0";
@@ -17,6 +18,9 @@ const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // -------------------- Deno KV Setup --------------------
 const kv = await Deno.openKv();
+
+// -------------------- Admins --------------------
+const ADMINS = ["Masakoff"]; // Add more usernames if needed
 
 // -------------------- Telegram Helpers --------------------
 async function sendMessage(
@@ -42,15 +46,17 @@ async function sendMessage(
 async function generateResponse(
   prompt: string,
   isCreator: boolean,
-  lastMessage?: string,
+  userHistory: string[],
 ): Promise<string> {
   try {
     const style = isCreator
       ? `Respond politely, naturally, and respectfully — as if speaking to your creator, add emojis. Avoid sarcasm, be concise, and use a friendly tone in Turkmen.`
       : `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.`;
 
-    const context = lastMessage
-      ? `User previously said: "${lastMessage}". Now they say: "${prompt}".`
+    const context = userHistory.length
+      ? `Here is what this user said before:\n${userHistory
+          .map((m, i) => `${i + 1}. ${m}`)
+          .join("\n")}\nNow they say: "${prompt}".`
       : `User says: "${prompt}".`;
 
     const result = await model.generateContent(`${style}\n${context}`);
@@ -59,6 +65,25 @@ async function generateResponse(
     console.error("Gemini error:", error);
     return "Извини, я завис 🤖💤";
   }
+}
+
+// -------------------- Storage Helpers --------------------
+async function getUserHistory(username: string): Promise<string[]> {
+  const key = ["user", username];
+  const data = await kv.get<string[]>(key);
+  return data?.value || [];
+}
+
+async function saveUserMessage(username: string, message: string) {
+  const key = ["user", username];
+  const history = await getUserHistory(username);
+  history.push(message);
+  await kv.set(key, history);
+}
+
+async function deleteUserHistory(username: string) {
+  const key = ["user", username];
+  await kv.delete(key);
 }
 
 // -------------------- HTTP Handler --------------------
@@ -70,27 +95,43 @@ serve(async (req) => {
       const chatId = String(update.message.chat.id);
       const text = update.message.text;
       const messageId = update.message.message_id;
-      const username = update.message.from?.username || "";
+      const username = update.message.from?.username || "unknown_user";
+      const isAdmin = ADMINS.includes(username);
+      const isCreator = username === "Masakoff";
 
-      if (text) {
-        const userKey = ["user", chatId];
+      if (!text) return new Response("ok");
 
-        // 🧠 Get the user's last message
-        const last = await kv.get(userKey);
-        const lastMessage = last?.value || null;
+      // -------------------- Admin Delete Command --------------------
+      if (text.startsWith("/delete")) {
+        if (!isAdmin) {
+          await sendMessage(chatId, "🚫 You don’t have permission to do that.", messageId);
+          return new Response("ok");
+        }
 
-        // 👑 Creator check
-        const isCreator = username === "Masakoff";
+        const parts = text.split(" ");
+        if (parts.length < 2) {
+          await sendMessage(chatId, "Usage: /delete <username>", messageId);
+          return new Response("ok");
+        }
 
-        // 🤖 Generate response using last message as context
-        const botResponse = await generateResponse(text, isCreator, lastMessage);
-
-        // 💬 Send reply
-        await sendMessage(chatId, botResponse, messageId);
-
-        // 💾 Save this as the user's new "last message"
-        await kv.set(userKey, text);
+        const targetUser = parts[1].replace("@", "");
+        await deleteUserHistory(targetUser);
+        await sendMessage(chatId, `🗑 Storage for @${targetUser} deleted successfully.`, messageId);
+        return new Response("ok");
       }
+
+      // -------------------- Regular Message Handling --------------------
+      // 💾 Save user's message
+      await saveUserMessage(username, text);
+
+      // 🧠 Get user's history for context
+      const history = await getUserHistory(username);
+
+      // 🤖 Generate a contextual response
+      const botResponse = await generateResponse(text, isCreator, history);
+
+      // 💬 Send the reply
+      await sendMessage(chatId, botResponse, messageId);
     }
   } catch (err) {
     console.error("Error handling update:", err);
@@ -98,4 +139,3 @@ serve(async (req) => {
 
   return new Response("ok");
 });
-
