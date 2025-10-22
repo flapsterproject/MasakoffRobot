@@ -1,7 +1,7 @@
 // main.ts
-// 🤖 Masakoff Sarcastic Bot with User Memory + Admin Delete + Group Message Optimization
+// 🤖 Masakoff Sarcastic Bot with User Memory + Admin Delete + Group Message Optimization + Mention Reply
 // 💾 Stores all user messages individually in Deno KV
-// 💬 Replies in groups only once every 5th message
+// 💬 Replies in groups only once every 5th message (unless @MasakoffRobot is mentioned)
 // 👤 Users can delete their own data in private with /delete
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -146,10 +146,19 @@ serve(async (req) => {
       return new Response("ok");
     }
 
-    // -------------------- Group Message Optimization --------------------
+    // -------------------- Group Message Handling --------------------
     if (chatType === "group" || chatType === "supergroup") {
-      const count = await incrementGroupCounter(chatId);
-      if (count !== 5) return new Response("ok"); // reply only every 5th message
+      const mentionedBot = text.includes("@MasakoffRobot");
+      let shouldReply = false;
+
+      if (mentionedBot) {
+        shouldReply = true; // always reply if mentioned
+      } else {
+        const count = await incrementGroupCounter(chatId);
+        if (count === 5) shouldReply = true; // reply every 5th message
+      }
+
+      if (!shouldReply) return new Response("ok");
     }
 
     // -------------------- Regular Message Handling --------------------
