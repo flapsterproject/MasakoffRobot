@@ -12,7 +12,7 @@ const TOKEN = Deno.env.get("BOT_TOKEN");
 const API = `https://api.telegram.org/bot${TOKEN}`;
 
 // -------------------- Gemini Setup --------------------
-const GEMINI_API_KEY = "AIzaSyB83llB8VHdeQa9bLvqynY9T7kc2ScwBcg";
+const GEMINI_API_KEY = "AIzaSyDMOfsTiCixIIPpAWoQR9Y7xpgbJQX9z8Q";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
