@@ -141,10 +141,10 @@ async function generateResponse(prompt: string, isCreator: boolean, userHistory:
 
     const result = await model.generateContent(`${style}\n${context}`);
     const text = typeof result.response.text === "function" ? result.response.text() : result.response;
-    return (text as string) || "🤖 Meniň limitim gutardy 😅";
+    //return (text as string) || "🤖 Meniň limitim gutardy 😅";
   } catch (err) {
     console.error("Gemini error:", err);
-    return "🤖 Meniň limitim gutardy 😅";
+    //return "🤖 Meniň limitim gutardy 😅";
   }
 }
 
