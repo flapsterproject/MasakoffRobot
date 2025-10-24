@@ -129,7 +129,7 @@ async function resetGroupCounter(chatId: string) {
 async function generateResponse(prompt: string, isCreator: boolean, userHistory: string[], analysis?: string): Promise<string> {
   try {
     const style = isCreator
-      ? `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.he created you,be a little bit polite.he is @Masakoff.`
+      ? `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.@Masakoff created you`
       : `Respond as a witty, realistic human — use sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.@Masakoff created you`;
 
     let context = "";
