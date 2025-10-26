@@ -2,7 +2,7 @@
 // 🤖 Masakoff Sarcastic Bot with Group Message Tracking + Reply Relationship Analysis
 // 💾 Stores per-user and per-group messages in Deno KV (timestamps in Ashgabat time)
 // 💬 Replies in groups only once every 5th message (unless @MasakoffRobot is mentioned)
-// 👤 Works ONLY in groups (ignores private messages completely)
+// 👤 Users can delete their own data in private with /delete, admins can delete others' data
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.19.0";
@@ -66,6 +66,17 @@ async function saveUserMessage(username: string, message: string) {
   await kv.set(key, history);
 }
 
+async function deleteUserHistory(username: string) {
+  const key = ["user", username];
+  const existing = await kv.get(key);
+  if (existing?.value) {
+    await kv.delete(key);
+    console.log(`🗑 Deleted storage for user: ${username}`);
+  } else {
+    console.log(`⚠️ No storage found for user: ${username}`);
+  }
+}
+
 // -------------------- Group Storage --------------------
 type GroupMessage = {
   message_id: number;
@@ -117,7 +128,9 @@ async function resetGroupCounter(chatId: string) {
 // -------------------- Gemini Response Generator --------------------
 async function generateResponse(prompt: string, isCreator: boolean, userHistory: string[], analysis?: string): Promise<string> {
   try {
-    const style = `Respond as a witty, realistic human — use clever sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online. You are @MasakoffRobot, a boy, sometimes romantic.`;
+    const style = isCreator
+      ? `Respond as a witty, realistic human — use clever sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.You are boy,sometimes romantic.`
+      : `Respond as a witty, realistic human — use clever sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.You are boy,sometimes romantic.`;
 
     let context = "";
     if (userHistory?.length) {
@@ -128,10 +141,10 @@ async function generateResponse(prompt: string, isCreator: boolean, userHistory:
 
     const result = await model.generateContent(`${style}\n${context}`);
     const text = typeof result.response.text === "function" ? result.response.text() : result.response;
-    return (text as string) || "";
+    return (text as string) || "";      //"🤖 Meniň limitim gutardy 😅";
   } catch (err) {
     console.error("Gemini error:", err);
-    return "";
+     return "";      //return "🤖 Meniň limitim gutardy 😅";
   }
 }
 
@@ -174,21 +187,44 @@ serve(async (req) => {
     const messageId = msg.message_id;
     const username = msg.from?.username || msg.from?.first_name || "unknown";
     const userId = msg.from?.id;
+    const isAdmin = ADMINS.includes(username.replace("@", ""));
     const isCreator = username.replace("@", "") === "Masakoff";
     const chatType = msg.chat.type;
-
-    // 🧱 Ignore all private chats completely
-    if (chatType === "private") return new Response("ok");
+    const isPrivate = chatType === "private";
 
     const repliedToMsg = msg.reply_to_message;
     const repliedToUsername = repliedToMsg?.from?.username || repliedToMsg?.from?.first_name;
     const repliedToUserId = repliedToMsg?.from?.id;
     const repliedToIsBot = Boolean(repliedToMsg?.from?.is_bot);
 
+    // --- Private delete ---
+    if (isPrivate && text.trim() === "/delete") {
+      await deleteUserHistory(username);
+      await sendMessage(chatId, "🗑 Siziň maglumatlaryňyz pozuldy.", messageId);
+      return new Response("ok");
+    }
+
+    // --- Admin delete ---
+    if (text.startsWith("/delete ")) {
+      if (!isAdmin) {
+        await sendMessage(chatId, "🚫 Seniň muny etmäge hakyň ýok!", messageId);
+        return new Response("ok");
+      }
+      const parts = text.split(/\s+/);
+      const targetUser = parts[1]?.replace("@", "").trim();
+      if (!targetUser) {
+        await sendMessage(chatId, "ℹ️ Ulanyş: /delete <username>", messageId);
+        return new Response("ok");
+      }
+      await deleteUserHistory(targetUser);
+      await sendMessage(chatId, `@${targetUser} 🗑 maglumatlaryň pozuldy.`, messageId);
+      return new Response("ok");
+    }
+
     const recordedText = text?.trim() || "[non-text]";
     await saveUserMessage(username, recordedText);
 
-    // --- Group Handling Only ---
+    // --- Group Handling ---
     if (chatType === "group" || chatType === "supergroup") {
       const groupMsg: GroupMessage = {
         message_id: messageId,
@@ -206,8 +242,10 @@ serve(async (req) => {
 
       const mentionedBot = recordedText.includes("@MasakoffRobot");
       let shouldReply = false;
+      let forcedByMention = false;
       if (mentionedBot) {
         shouldReply = true;
+        forcedByMention = true;
         await resetGroupCounter(chatId);
       } else {
         const count = await incrementGroupCounter(chatId);
@@ -236,6 +274,13 @@ serve(async (req) => {
 
       await sendMessage(chatId, botResponse, messageId);
       return new Response("ok");
+    }
+
+    // --- Private chat replies ---
+    if (isPrivate) {
+      const userHistory = await getUserHistory(username);
+      const botResponse = await generateResponse(recordedText, isCreator, userHistory);
+      await sendMessage(chatId, botResponse, messageId);
     }
   } catch (err) {
     console.error("Error handling update:", err);
