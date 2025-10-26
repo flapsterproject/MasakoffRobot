@@ -1,10 +1,8 @@
 // main.ts
-// 🤖 Masakoff Business Advisor Bot with Group Message Tracking + Reply Relationship Analysis
+// 🤖 Masakoff Sarcastic Bot with Group Message Tracking + Reply Relationship Analysis
 // 💾 Stores per-user and per-group messages in Deno KV (timestamps in Ashgabat time)
 // 💬 Replies in groups only once every 5th message (unless @MasakoffRobot is mentioned)
 // 👤 Users can delete their own data in private with /delete, admins can delete others' data
-// 🔄 Modified to expand user's idea into step-by-step guide for $1M/month profit
-//    If user asks for an idea, generates one and provides full steps
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.19.0";
@@ -131,22 +129,22 @@ async function resetGroupCounter(chatId: string) {
 async function generateResponse(prompt: string, isCreator: boolean, userHistory: string[], analysis?: string): Promise<string> {
   try {
     const style = isCreator
-      ? `You are @MasakoffRobot, a business advisor AI. The user's message is either a request for a business idea or a business idea itself. If the user asks for an idea (e.g., "give me an idea" or similar), generate a creative business idea first. Then, expand it (or the provided idea) into a very detailed, step-by-step guide on how to achieve $1 million in monthly profit. Cover all aspects: market research, product/service development, marketing strategies, operations, scaling, financial planning, potential risks, and more. Be comprehensive, use numbered steps, and make it realistic yet ambitious. Respond in English, add emojis where appropriate, and keep it engaging like chatting with a friend. You are a boy, sometimes romantic in your encouragement.`
-      : `You are @MasakoffRobot, a business advisor AI. The user's message is either a request for a business idea or a business idea itself. If the user asks for an idea (e.g., "give me an idea" or similar), generate a creative business idea first. Then, expand it (or the provided idea) into a very detailed, step-by-step guide on how to achieve $1 million in monthly profit. Cover all aspects: market research, product/service development, marketing strategies, operations, scaling, financial planning, potential risks, and more. Be comprehensive, use numbered steps, and make it realistic yet ambitious. Respond in English, add emojis where appropriate, and keep it engaging like chatting with a friend. You are a boy, sometimes romantic in your encouragement.`;
+      ? `Respond as a witty, realistic human — use clever sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.You are boy,sometimes romantic.`
+      : `Respond as a witty, realistic human — use clever sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.You are boy,sometimes romantic.`;
 
     let context = "";
     if (userHistory?.length) {
-      context += `User's recent messages (for context on previous ideas):\n${userHistory.slice(-10).map((m, i) => `${i + 1}. ${m}`).join("\n")}\n`;
+      context += `User's recent messages:\n${userHistory.slice(-10).map((m, i) => `${i + 1}. ${m}`).join("\n")}\n`;
     }
-    if (analysis) context += `Group analysis (use if relevant to the idea):\n${analysis}\n`;
-    context += `User's current message: "${prompt}"\nNow, generate the full expanded response as described.`;
+    if (analysis) context += `Group analysis:\n${analysis}\n`;
+    context += `Now craft a <1-2 sentence> sarcastic reply to: "${prompt}"`;
 
     const result = await model.generateContent(`${style}\n${context}`);
     const text = typeof result.response.text === "function" ? result.response.text() : result.response;
-    return (text as string) || "🤖 Sorry, I couldn't generate a response right now 😅";
+    return (text as string) || "";      //"🤖 Meniň limitim gutardy 😅";
   } catch (err) {
     console.error("Gemini error:", err);
-    return "🤖 Sorry, I couldn't generate a response right now 😅";
+     return "";      //return "🤖 Meniň limitim gutardy 😅";
   }
 }
 
@@ -263,11 +261,11 @@ serve(async (req) => {
       const repliedToIsProbablyBot = Boolean(groupMsg.replied_to_is_bot) ||
         (groupMsg.replied_to_username && groupMsg.replied_to_username.toLowerCase().includes("bot"));
       if (repliedToIsProbablyBot) {
-        analysisHint = `Note: This message replies to a bot (${groupMsg.replied_to_username}). Incorporate if relevant to the business idea.`;
+        analysisHint = `Note: This message replies to a bot (${groupMsg.replied_to_username}). Craft a sarcastic reply teasing that.`;
       } else if (groupMsg.replied_to_username) {
-        analysisHint = `Note: This message replies to @${groupMsg.replied_to_username}. Use this context if it fits the idea expansion.`;
+        analysisHint = `Note: This message replies to @${groupMsg.replied_to_username}. Use this to make a realistic sarcastic comeback.`;
       } else {
-        analysisHint = `Note: This message isn't a reply. Use recent group context if applicable.`;
+        analysisHint = `Note: This message isn't a reply. Use recent group context to sound natural.`;
       }
 
       const finalPrompt = `${analysis}\n${analysisHint}`;
