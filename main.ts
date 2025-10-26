@@ -16,7 +16,7 @@ const API = `https://api.telegram.org/bot${TOKEN}`;
 // -------------------- Gemini Setup --------------------
 const GEMINI_API_KEY = "AIzaSyAfPelaBglzw0V4ZdaR2ECPeS5vJsW3HsY";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Corrected model name to valid one
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // -------------------- Deno KV --------------------
 const kv = await Deno.openKv();
