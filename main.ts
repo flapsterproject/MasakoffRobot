@@ -1,7 +1,7 @@
 // main.ts
-// 🤖 Masakoff Sarcastic Bot with Group Message Tracking + Reply Relationship Analysis
+// 🤖 Masakoff Business Bot with Group Message Tracking + Reply Relationship Analysis
 // 💾 Stores per-user and per-group messages in Deno KV (timestamps in Ashgabat time)
-// 💬 Replies in groups only once every 5th message (unless @MasakoffRobot is mentioned)
+// 💬 Replies only if @MasakoffRobot is mentioned
 // 👤 Users can delete their own data in private with /delete, admins can delete others' data
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -12,7 +12,7 @@ const TOKEN = Deno.env.get("BOT_TOKEN");
 const API = `https://api.telegram.org/bot${TOKEN}`;
 
 // -------------------- Gemini Setup --------------------
-const GEMINI_API_KEY = "AIzaSyC-vupSOYG1u0l81UPaeGkNqg9qQ_x5U0g";
+const GEMINI_API_KEY = "AIzaSyAfPelaBglzw0V4ZdaR2ECPeS5vJsW3HsY";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
@@ -105,39 +105,16 @@ async function saveGroupMessage(chatId: string, msg: GroupMessage) {
   await kv.set(key, truncated);
 }
 
-// -------------------- Group Counter --------------------
-async function incrementGroupCounter(chatId: string): Promise<number> {
-  const key = ["group_count", chatId];
-  const data = await kv.get<number>(key);
-  const current = data?.value ?? 0;
-  const next = current + 1;
-  if (next >= 5) {
-    await kv.set(key, 0);
-    return 5;
-  } else {
-    await kv.set(key, next);
-    return next;
-  }
-}
-
-async function resetGroupCounter(chatId: string) {
-  const key = ["group_count", chatId];
-  await kv.set(key, 0);
-}
-
 // -------------------- Gemini Response Generator --------------------
-async function generateResponse(prompt: string, isCreator: boolean, userHistory: string[], analysis?: string): Promise<string> {
+async function generateResponse(prompt: string, isCreator: boolean, userHistory: string[]): Promise<string> {
   try {
-    const style = isCreator
-      ? `Respond as a witty, realistic human — use clever sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.You are boy,sometimes romantic.`
-      : `Respond as a witty, realistic human — use clever sarcasm, keep it very short (1–2 sentences), add emojis, and write naturally in Turkmen, as if chatting with a friend online.And you are @MasakoffRobot.You are boy,sometimes romantic.`;
+    const style = `Sen @MasakoffRobot, ýardam beriji biznes maslahatçysy. Sen türkmen dilinde jogap berýäň. Ulanyjynyň habaryny biznes ideýasy hökmünde kabul et we ony gaty giňelt. Soňra, şol ideýany aýda $1 million girdeji getirýän biznes etmek üçin jikme-jik ädim-ädim gollanma ber. Eger ulanyjy biznes ideýasyny sorasa, ilki täze ýaradyjy ideýa döret, soňra ädimleri ber. Goldaýjy bol, emoji ulan, we jogaby ýagdaýly gurnaşdyr.`;
 
     let context = "";
     if (userHistory?.length) {
-      context += `User's recent messages:\n${userHistory.slice(-10).map((m, i) => `${i + 1}. ${m}`).join("\n")}\n`;
+      context += `Ulanyjynyň soňky habarlary:\n${userHistory.slice(-10).map((m, i) => `${i + 1}. ${m}`).join("\n")}\n`;
     }
-    if (analysis) context += `Group analysis:\n${analysis}\n`;
-    context += `Now craft a <1-2 sentence> sarcastic reply to: "${prompt}"`;
+    context += `Ulanyjynyň habary: "${prompt}"`;
 
     const result = await model.generateContent(`${style}\n${context}`);
     const text = typeof result.response.text === "function" ? result.response.text() : result.response;
@@ -146,33 +123,6 @@ async function generateResponse(prompt: string, isCreator: boolean, userHistory:
     console.error("Gemini error:", err);
      return "";      //return "🤖 Meniň limitim gutardy 😅";
   }
-}
-
-// -------------------- Group Message Analysis --------------------
-function analyzeGroupMessagesForReply(history: GroupMessage[], currentMsg: GroupMessage) {
-  const last = history.slice(-10);
-  const counts: Record<string, number> = {};
-  for (const m of last) counts[m.username] = (counts[m.username] || 0) + 1;
-  const topActive = Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([u, c]) => `${u}(${c})`)
-    .join(", ") || "none";
-
-  const repliedTo = currentMsg.replied_to_username || "no one";
-  const repliedToIsBot = currentMsg.replied_to_is_bot ? "yes" : "no";
-
-  const pairs: string[] = [];
-  for (const m of last) if (m.replied_to_username) pairs.push(`${m.username}->${m.replied_to_username}`);
-  const uniquePairs = Array.from(new Set(pairs)).slice(0, 10).join(", ") || "none";
-
-  return [
-    `Current message author: ${currentMsg.username}.`,
-    `Replied to: ${repliedTo}. Replied-to-is-bot: ${repliedToIsBot}.`,
-    `Top active users (last 10): ${topActive}.`,
-    `Recent reply pairs: ${uniquePairs}.`,
-    `Timestamp (Ashgabat): ${currentMsg.timestampAshgabat}.`,
-  ].join("\n");
 }
 
 // -------------------- Webhook Handler --------------------
@@ -241,36 +191,10 @@ serve(async (req) => {
       await saveGroupMessage(chatId, groupMsg);
 
       const mentionedBot = recordedText.includes("@MasakoffRobot");
-      let shouldReply = false;
-      let forcedByMention = false;
-      if (mentionedBot) {
-        shouldReply = true;
-        forcedByMention = true;
-        await resetGroupCounter(chatId);
-      } else {
-        const count = await incrementGroupCounter(chatId);
-        if (count === 5) shouldReply = true;
-      }
+      if (!mentionedBot) return new Response("ok");
 
-      if (!shouldReply) return new Response("ok");
-
-      const groupHistory = await getGroupHistory(chatId);
-      const analysis = analyzeGroupMessagesForReply(groupHistory, groupMsg);
-
-      let analysisHint = "";
-      const repliedToIsProbablyBot = Boolean(groupMsg.replied_to_is_bot) ||
-        (groupMsg.replied_to_username && groupMsg.replied_to_username.toLowerCase().includes("bot"));
-      if (repliedToIsProbablyBot) {
-        analysisHint = `Note: This message replies to a bot (${groupMsg.replied_to_username}). Craft a sarcastic reply teasing that.`;
-      } else if (groupMsg.replied_to_username) {
-        analysisHint = `Note: This message replies to @${groupMsg.replied_to_username}. Use this to make a realistic sarcastic comeback.`;
-      } else {
-        analysisHint = `Note: This message isn't a reply. Use recent group context to sound natural.`;
-      }
-
-      const finalPrompt = `${analysis}\n${analysisHint}`;
       const userHistory = await getUserHistory(username);
-      const botResponse = await generateResponse(recordedText, isCreator, userHistory, finalPrompt);
+      const botResponse = await generateResponse(recordedText, isCreator, userHistory);
 
       await sendMessage(chatId, botResponse, messageId);
       return new Response("ok");
@@ -278,6 +202,9 @@ serve(async (req) => {
 
     // --- Private chat replies ---
     if (isPrivate) {
+      const mentionedBot = recordedText.includes("@MasakoffRobot");
+      if (!mentionedBot) return new Response("ok");
+
       const userHistory = await getUserHistory(username);
       const botResponse = await generateResponse(recordedText, isCreator, userHistory);
       await sendMessage(chatId, botResponse, messageId);
