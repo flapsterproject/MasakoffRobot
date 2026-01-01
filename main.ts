@@ -5,11 +5,16 @@
 // 👤 Users can delete their own data in private with /delete, admins can delete others' data
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import puter from "npm:@heyputer/puter.js@^2.0.0";
+import { GoogleGenerativeAI } from "npm:@google/generative-ai@^0.19.0";
 
 // -------------------- Telegram Setup --------------------
 const TOKEN = Deno.env.get("BOT_TOKEN");
 const API = `https://api.telegram.org/bot${TOKEN}`;
+
+// -------------------- Gemini Setup --------------------
+const GEMINI_API_KEY = "AIzaSyC-vupSOYG1u0l81UPaeGkNqg9qQ_x5U0g";
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // -------------------- Deno KV --------------------
 const kv = await Deno.openKv();
@@ -134,12 +139,12 @@ async function generateResponse(prompt: string, isCreator: boolean, userHistory:
     if (analysis) context += `Group analysis:\n${analysis}\n`;
     context += `Now craft a <1-2 sentence> sarcastic reply to: "${prompt}"`;
 
-    const fullPrompt = `${style}\n${context}`;
-    const response = await puter.ai.chat(fullPrompt, { model: "gemini-2.5-flash" });
-    return response || "";
+    const result = await model.generateContent(`${style}\n${context}`);
+    const text = typeof result.response.text === "function" ? result.response.text() : result.response;
+    return (text as string) || "";      //"🤖 Meniň limitim gutardy 😅";
   } catch (err) {
-    console.error("Puter.js Gemini error:", err);
-    return "";
+    console.error("Gemini error:", err);
+     return "";      //return "🤖 Meniň limitim gutardy 😅";
   }
 }
 
